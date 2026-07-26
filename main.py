@@ -30,6 +30,7 @@ state = {
     "max_daily_loss": 500.0,
     "max_position":  1000.0,
     "emergency_stop": False,
+    "paper_trading":  True,
     "trades":        [],
     "ai_analysis":   {},
     "opportunities": [],
@@ -207,12 +208,15 @@ th{color:var(--dim);font-weight:600}
 .opp-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
 .conf-bar{height:4px;border-radius:2px;margin-top:4px}
 input,select{background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px;width:100%}
+#paper-btn.paper-on{color:var(--yellow);border-color:var(--yellow);background:var(--yellow)18}
+#paper-btn.paper-off{color:var(--red);border-color:var(--red);background:var(--red)18}
 label{font-size:12px;color:var(--dim);display:block;margin-bottom:4px}
 </style></head><body>
 <div style="display:flex;justify-content:space-between;align-items:center">
-<div><h1>\U0001f916 GridrunnerAItrader</h1><div class="sub"><span class="dot" id="dot"></span> <span id="status-text">Stopped</span></div></div>
+<div><h1>\U0001f916 GridrunnerAItrader</h1><div class="sub"><span class="dot" id="dot"></span> <span id="status-text">Stopped</span></div><button class="btn" onclick="toggleConfig()" style="font-size:18px;padding:4px 8px" title="Toggle Config">\u2699</button></div>
 <div><button class="btn primary" id="start-btn" onclick="startBot()">\u25b6 Start</button>
-<button class="btn danger" id="stop-btn" onclick="stopBot()" style="display:none">\u23f9 Stop</button></div>
+<button class="btn danger" id="stop-btn" onclick="stopBot()" style="display:none">\u23f9 Stop</button>
+<button class="btn" id="paper-btn" onclick="togglePaper()" style="font-size:12px">\U0001f4cb PAPER</button></div>
 </div>
 <div class="grid-2">
 <div class="card"><h3 style="color:var(--accent);margin-bottom:12px">\U0001f9e0 AI Analysis</h3>
@@ -224,7 +228,7 @@ label{font-size:12px;color:var(--dim);display:block;margin-bottom:4px}
 <div class="card"><h3 style="color:var(--dim);margin-bottom:12px">\U0001f4ca Trade History</h3>
 <table><thead><tr><th>Time</th><th>Pair</th><th>Action</th><th>Price</th><th>Amount</th><th>P&amp;L</th></tr></thead>
 <tbody id="trades-body"><tr><td colspan="6" style="color:var(--dim)">No trades yet</td></tr></tbody></table></div>
-<div class="card"><h3 style="color:var(--dim);margin-bottom:12px">\u2699 Configuration</h3>
+<div class="card" id="config-card" style="display:none"><h3 style="color:var(--dim);margin-bottom:12px;cursor:pointer" onclick="toggleConfig()">\u2699 Configuration <span id="gear-icon" style="font-size:14px">\u25b6</span></h3>
 <div class="grid-2">
 <div><label>Trading Pair</label><select id="cfg-pair" onchange="updateCfg()"><option>SOL/USDC</option><option>BTC/USDC</option><option>ETH/USDC</option></select></div>
 <div><label>Max Position (USD)</label><input id="cfg-maxpos" type="number" value="1000" onchange="updateCfg()"></div>
@@ -241,6 +245,7 @@ document.getElementById("dot").className="dot"+(on?" on":"");
 document.getElementById("status-text").textContent=on?"Running \u2014 AI Trader on "+(d.pair||"SOL/USDC"):"Stopped";
 document.getElementById("start-btn").style.display=on?"none":"inline-block";
 document.getElementById("stop-btn").style.display=on?"inline-block":"none";
+updatePaperBtn(d.paper_trading);
 var ai=d.ai_analysis||{},ind=ai.indicators||{};
 if(ind.signal){var cls="signal-"+ind.signal;
 document.getElementById("ai-narrative").innerHTML="<span class=\""+cls+"\">"+ind.signal.toUpperCase()+"</span> "+(ai.narrative||"")+" <span style=\"color:var(--dim);font-size:11px\">Confidence: "+(ind.confidence*100).toFixed(0)+"%</span>";
@@ -261,6 +266,12 @@ function stopBot(){apiFetch("/stop",{method:"POST"}).then(function(){refresh()})
 function updateCfg(){}
 function saveConfig(){var c={pair:document.getElementById("cfg-pair").value,max_pos:parseFloat(document.getElementById("cfg-maxpos").value)||1000,max_daily_loss:parseFloat(document.getElementById("cfg-maxloss").value)||500};
 apiFetch("/config",{method:"POST",body:JSON.stringify(c)}).then(function(){alert("Config saved")})}
+function togglePaper(){apiFetch("/toggle_paper",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+var btn=document.getElementById("paper-btn");
+if(d.paper_trading){btn.textContent="\U0001f4cb PAPER";btn.className="btn paper-on"}
+else{btn.textContent="\U0001f534 LIVE";btn.className="btn paper-off"}})}
+function toggleConfig(){var c=document.getElementById("config-card");c.style.display=c.style.display==="none"?"block":"none"}
+function updatePaperBtn(pt){var b=document.getElementById("paper-btn");b.textContent=pt?"\U0001f4cb PAPER":"\U0001f534 LIVE";b.className="btn "+(pt?"paper-on":"paper-off")}
 setInterval(refresh,3000);refresh();
 </script></body></html>"""
 
@@ -289,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
                     "daily_loss":state["daily_loss"],"ai_analysis":state["ai_analysis"],
                     "opportunities":state["opportunities"],"trades_list":state["trades_list"],
                     "max_position":state["max_position"],"max_daily_loss":state["max_daily_loss"],
-                    "emergency_stop":state["emergency_stop"]}).encode())
+                    "emergency_stop":state["emergency_stop"],"paper_trading":state["paper_trading"]}).encode())
         elif p=="/debug":
             with _state_lock: self.respond(200,"application/json",json.dumps(state,default=str).encode())
         else: self.respond(404,"text/plain",b"Not found")
