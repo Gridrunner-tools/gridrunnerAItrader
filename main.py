@@ -336,6 +336,10 @@ class Handler(BaseHTTPRequestHandler):
                 ok=execute_trade(data.get("signal","buy"),data.get("pair",state["pair"]),float(data.get("amount",100)))
                 self.respond(200,"application/json",json.dumps({"ok":ok}).encode())
             except Exception as e: self.respond(400,"application/json",json.dumps({"error":str(e)}).encode())
+        elif p=="/toggle_paper":
+            with _state_lock:
+                state["paper_trading"] = not state.get("paper_trading", True)
+            self.respond(200,"application/json",json.dumps({"paper_trading":state["paper_trading"]}).encode())
         elif p=="/emergency_stop":
             state["emergency_stop"]=True; state["running"]=False
             log("EMERGENCY STOP","WARN"); send_telegram("\U0001f6d1 <b>EMERGENCY STOP</b> activated")
