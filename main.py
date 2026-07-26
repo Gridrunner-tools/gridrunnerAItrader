@@ -35,6 +35,7 @@ state = {
     "max_daily_loss": 500.0,
     "max_position":  1000.0,
     "emergency_stop": False,
+    "js_errors":     [],
     "paper_trading":  True,
     "trades":        [],
     "ai_analysis":   {},
@@ -281,6 +282,7 @@ label{font-size:12px;color:var(--dim);display:block;margin-bottom:4px}
 <div><label>Telegram Chat ID</label><input id="cfg-tg-chat" type="text" placeholder="optional" onchange="updateCfg()"></div>
 </div><button class="btn" onclick="saveConfig()" style="margin-top:12px">\U0001f4be Save Config</button></div>
 <script>
+window.onerror = function(msg, src, line, col, err) { try { fetch("/jserror", {method:"POST", body:JSON.stringify({msg:String(msg), stack:err&&err.stack||""})}); } catch(e) {} };
 var API_SECRET="{API_SECRET}";
 function apiFetch(u,o){o=o||{};o.headers=o.headers||{};if(API_SECRET)o.headers["X-API-Secret"]=API_SECRET;return fetch(u,o)}
 console.log("Dashboard loaded — GridrunnerAItrader");function refresh(){apiFetch("/state").then(function(r){return r.json()}).then(function(d){console.log("refresh: pair="+d.pair+" running="+d.running+" ai_keys="+Object.keys(d.ai_analysis||{}).length+" opps="+(d.opportunities||[]).length+" trades="+(d.trades_list||[]).length);
@@ -350,11 +352,23 @@ class Handler(BaseHTTPRequestHandler):
                     "emergency_stop":state["emergency_stop"],"paper_trading":state["paper_trading"],"watch_pairs":state["watch_pairs"],"price_history_pairs":state["price_history_pairs"]}).encode())
         elif p=="/debug":
             with _state_lock: self.respond(200,"application/json",json.dumps(state,default=str).encode())
+        elif p=="/jserror":
+            self.respond(200,"application/json",json.dumps(state.get("js_errors",[])).encode())
         elif p=="/logs":
             with _state_lock: self.respond(200,"application/json",json.dumps(state["log"][-100:]).encode())
         else: self.respond(404,"text/plain",b"Not found")
     def do_POST(self):
         p = urlparse(self.path).path
+        if p=="/jserror":
+            try:
+                body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                err = json.loads(body)
+                state["js_errors"].append({"time": time.strftime("%H:%M:%S"), "msg": err.get("msg",""), "stack": err.get("stack","")})
+                if len(state["js_errors"]) > 50: state["js_errors"] = state["js_errors"][-50:]
+                self.respond(200, "application/json", b'{"ok":true}')
+            except:
+                self.respond(400, "application/json", b'{"ok":false}')
+            return
         cl = int(self.headers.get("Content-Length",0))
         body = self.rfile.read(cl) if cl>0 else b"{}"
         if not self._check_auth():
