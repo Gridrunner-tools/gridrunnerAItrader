@@ -319,9 +319,10 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body if isinstance(body,bytes) else body.encode())
     def do_GET(self):
         p = urlparse(self.path).path
-        if not self._check_auth():
-            self.respond(401,"text/plain",b"Unauthorized")
-            return
+        if p not in ("/","/dashboard","/state","/debug","/logs"):
+            if not self._check_auth():
+                self.respond(401,"text/plain",b"Unauthorized")
+                return
         if p in ("/","/dashboard"):
             self.respond(200,"text/html; charset=utf-8",DASHBOARD.replace("{API_SECRET}",self.API_SECRET).encode())
         elif p=="/state":
