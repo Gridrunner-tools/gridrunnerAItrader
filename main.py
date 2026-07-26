@@ -257,7 +257,7 @@ input,select{background:var(--bg);border:1px solid var(--border);color:var(--tex
 label{font-size:12px;color:var(--dim);display:block;margin-bottom:4px}
 </style></head><body>
 <div style="display:flex;justify-content:space-between;align-items:center">
-<div><h1>\U0001f916 GridrunnerAItrader</h1><div class="sub"><span class="dot" id="dot"></span> <span id="status-text">Stopped</span></div><button class="btn" onclick="toggleConfig()" style="font-size:18px;padding:4px 8px" title="Toggle Config">\u2699</button></div>
+<div><h1>\U0001f916 GridrunnerAItrader</h1><div class="sub"><span class="dot" id="dot"></span> <span id="status-text">Stopped</span></div><button class="btn" onclick="toggleConfig()" id="gear-btn" style="font-size:16px;padding:4px 8px;margin-left:8px" title="Toggle Config">⚙</button><button class="btn" onclick="toggleConfig()" style="font-size:18px;padding:4px 8px" title="Toggle Config">\u2699</button></div><button class="btn" onclick="toggleConfig()" id="gear-btn" style="font-size:16px;padding:4px 8px;margin-left:8px" title="Toggle Config">⚙</button>
 <div><button class="btn primary" id="start-btn" onclick="startBot()">\u25b6 Start</button>
 <button class="btn danger" id="stop-btn" onclick="stopBot()" style="display:none">\u23f9 Stop</button>
 <button class="btn" id="paper-btn" onclick="togglePaper()" style="font-size:12px">\U0001f4cb PAPER</button></div>
