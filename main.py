@@ -37,6 +37,8 @@ state = {
     "price_history": [],
     "log":           [],
     "trades_list":   [],
+    "watch_pairs":        ["SOL/USDC","BTC/USDC","ETH/USDC","BNB/USDC","JUP/USDC","BONK/USDC"],
+    "price_history_pairs": {},
 }
 _state_lock = threading.Lock()
 
@@ -82,7 +84,8 @@ def calc_macd(prices, fast=12, slow=26, sig=9):
 
 # ── AI Analysis ──────────────────────────────────────────────────────────────
 def analyze_market(pair):
-    prices = [p["value"] for p in state["price_history"][-50:]]
+    ph = state["price_history_pairs"].get(pair, state["price_history"])
+    prices = [p["value"] for p in ph[-50:]]
     if len(prices) < 20: return {"error":"Not enough price data"}
     rsi = calc_rsi(prices, 14)
     macd, msig, mhist = calc_macd(prices)
@@ -165,20 +168,42 @@ def ai_loop():
     while True:
         if state["running"]:
             try:
-                pair=state["pair"]; price=get_price(pair)
-                if price>0:
-                    log(f"Price update: {pair}=${price:.4f}","DEBUG")
-                    state["price"]=price
-                    state["price_history"].append({"time":int(time.time()),"value":price})
-                    if len(state["price_history"])>200: state["price_history"]=state["price_history"][-200:]
-                ind=analyze_market(pair)
-                state["ai_analysis"]={"indicators":ind,"narrative":ai_narrative(ind),"timestamp":time.strftime("%H:%M:%S")}
-                state["opportunities"]=detect_opportunities(ind,pair)
-                if ind.get("confidence",0)>0.75 and ind.get("signal") in ("buy","sell"):
+                all_opps = []
+                for pair in state["watch_pairs"]:
+                    try:
+                        price=get_price(pair)
+                        if price<=0: continue
+                        # Per-pair price history
+                        if pair not in state["price_history_pairs"]:
+                            state["price_history_pairs"][pair]=[]
+                        state["price_history_pairs"][pair].append({"time":int(time.time()),"value":price})
+                        if len(state["price_history_pairs"][pair])>200:
+                            state["price_history_pairs"][pair]=state["price_history_pairs"][pair][-200:]
+                        # Also update primary pair's price/price_history for backward compat
+                        if pair==state["pair"]:
+                            state["price"]=price
+                            state["price_history"].append({"time":int(time.time()),"value":price})
+                            if len(state["price_history"])>200: state["price_history"]=state["price_history"][-200:]
+                        # Analyze this pair
+                        ind=analyze_market(pair)
+                        if ind.get("error"): continue
+                        pair_opps=detect_opportunities(ind,pair)
+                        all_opps.extend(pair_opps)
+                        # Update primary pair analysis for dashboard backward compat
+                        if pair==state["pair"]:
+                            state["ai_analysis"]={"indicators":ind,"narrative":ai_narrative(ind),"timestamp":time.strftime("%H:%M:%S")}
+                        log(f"AI scan: {pair} RSI={ind.get('rsi')} signal={ind.get('signal')} conf={ind.get('confidence')}","INFO")
+                    except Exception as e:
+                        log(f"AI scan error for {pair}: {e}","WARN")
+                # Rank all opportunities by confidence
+                all_opps.sort(key=lambda o: o["confidence"], reverse=True)
+                state["opportunities"]=all_opps[:5]
+                # Auto-trade highest confidence
+                if all_opps and all_opps[0]["confidence"]>0.75:
+                    best=all_opps[0]
                     amt=state["max_position"]*0.25
-                    if execute_trade(ind["signal"],pair,amt):
-                        send_telegram(f"<b>{ind['signal'].upper()}</b> {pair}\nPrice: ${price:.4f}\nAmount: ${amt:.2f}\nConfidence: {ind['confidence']*100:.0f}%")
-                log(f"AI cycle: {pair} RSI={ind.get('rsi')} MACD={ind.get('macd')} signal={ind.get('signal')} conf={ind.get('confidence')}","INFO")
+                    if execute_trade(best["direction"].lower(),best["pair"],amt):
+                        send_telegram(f"<b>{best['direction']}</b> {best['pair']}\nConfidence: {best['confidence']*100:.0f}%\nReason: {best['reason']}")
             except Exception as e:
                 import traceback
                 log(f"AI loop error: {e}\n{traceback.format_exc()}","ERROR")
@@ -235,6 +260,7 @@ label{font-size:12px;color:var(--dim);display:block;margin-bottom:4px}
 <div class="card" id="config-card" style="display:none"><h3 style="color:var(--dim);margin-bottom:12px;cursor:pointer" onclick="toggleConfig()">\u2699 Configuration <span id="gear-icon" style="font-size:14px">\u25b6</span></h3>
 <div class="grid-2">
 <div><label>Trading Pair</label><select id="cfg-pair" onchange="updateCfg()"><option>SOL/USDC</option><option>BTC/USDC</option><option>ETH/USDC</option></select></div>
+<div><label>Watch Pairs (comma-separated)</label><input id="cfg-watch" type="text" value="SOL/USDC,BTC/USDC,ETH/USDC,BNB/USDC,JUP/USDC,BONK/USDC" onchange="updateCfg()"></div>
 <div><label>Max Position (USD)</label><input id="cfg-maxpos" type="number" value="1000" onchange="updateCfg()"></div>
 <div><label>Max Daily Loss (USD)</label><input id="cfg-maxloss" type="number" value="500" onchange="updateCfg()"></div>
 <div><label>Telegram Token</label><input id="cfg-tg-token" type="text" placeholder="optional" onchange="updateCfg()"></div>
@@ -246,7 +272,7 @@ function apiFetch(u,o){o=o||{};o.headers=o.headers||{};if(API_SECRET)o.headers["
 console.log("Dashboard loaded — GridrunnerAItrader");function refresh(){apiFetch("/state").then(function(r){return r.json()}).then(function(d){console.log("refresh: pair="+d.pair+" running="+d.running+" ai_keys="+Object.keys(d.ai_analysis||{}).length+" opps="+(d.opportunities||[]).length+" trades="+(d.trades_list||[]).length);
 var on=d.running;
 document.getElementById("dot").className="dot"+(on?" on":"");
-document.getElementById("status-text").textContent=on?"Running \u2014 AI Trader on "+(d.pair||"SOL/USDC"):"Stopped";
+var wp=d.watch_pairs||[d.pair];document.getElementById("status-text").textContent=on?"Running \u2014 AI Trader scanning "+wp.length+" pairs":"Stopped";
 document.getElementById("start-btn").style.display=on?"none":"inline-block";
 document.getElementById("stop-btn").style.display=on?"inline-block":"none";
 updatePaperBtn(d.paper_trading);
@@ -268,7 +294,7 @@ document.getElementById("trades-body").innerHTML=th}
 function startBot(){apiFetch("/start",{method:"POST"}).then(function(){refresh()})}
 function stopBot(){apiFetch("/stop",{method:"POST"}).then(function(){refresh()})}
 function updateCfg(){}
-function saveConfig(){var c={pair:document.getElementById("cfg-pair").value,max_pos:parseFloat(document.getElementById("cfg-maxpos").value)||1000,max_daily_loss:parseFloat(document.getElementById("cfg-maxloss").value)||500};
+function saveConfig(){var wp=document.getElementById("cfg-watch").value.split(",").map(function(s){return s.trim()}).filter(Boolean);var c={pair:document.getElementById("cfg-pair").value,watch_pairs:wp,max_pos:parseFloat(document.getElementById("cfg-maxpos").value)||1000,max_daily_loss:parseFloat(document.getElementById("cfg-maxloss").value)||500};
 apiFetch("/config",{method:"POST",body:JSON.stringify(c)}).then(function(){alert("Config saved")})}
 function togglePaper(){console.log("Toggling paper mode");apiFetch("/toggle_paper",{method:"POST"}).then(function(r){return r.json()}).then(function(d){console.log("Paper mode now: "+d.paper_trading);
 var btn=document.getElementById("paper-btn");
@@ -306,7 +332,7 @@ class Handler(BaseHTTPRequestHandler):
                     "daily_loss":state["daily_loss"],"ai_analysis":state["ai_analysis"],
                     "opportunities":state["opportunities"],"trades_list":state["trades_list"],
                     "max_position":state["max_position"],"max_daily_loss":state["max_daily_loss"],
-                    "emergency_stop":state["emergency_stop"],"paper_trading":state["paper_trading"]}).encode())
+                    "emergency_stop":state["emergency_stop"],"paper_trading":state["paper_trading"],"watch_pairs":state["watch_pairs"],"price_history_pairs":state["price_history_pairs"]}).encode())
         elif p=="/debug":
             with _state_lock: self.respond(200,"application/json",json.dumps(state,default=str).encode())
         elif p=="/logs":
@@ -332,6 +358,8 @@ class Handler(BaseHTTPRequestHandler):
                 data=json.loads(body)
                 with _state_lock:
                     if "pair" in data: state["pair"]=data["pair"]
+                    if "watch_pairs" in data and isinstance(data["watch_pairs"],list):
+                        state["watch_pairs"]=data["watch_pairs"]
                     if "max_pos" in data: state["max_position"]=float(data["max_pos"])
                     if "max_daily_loss" in data: state["max_daily_loss"]=float(data["max_daily_loss"])
                 log(f"Config updated: {data}"); self.respond(200,"application/json",b'{"ok":true}')
