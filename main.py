@@ -18,6 +18,11 @@ PORT         = int(os.environ.get("PORT", 10000))
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+# Token mint addresses for DexScreener fallback
+SOL_TOKENS = {
+    "SPCX": "CDcVWZ35DcLUQK1HPwf4SiPxsaAHn6FqgLMnLaHbpump",
+}
+
 # ── Global State ──────────────────────────────────────────────────────────────
 state = {
     "running":       False,
@@ -37,7 +42,7 @@ state = {
     "price_history": [],
     "log":           [],
     "trades_list":   [],
-    "watch_pairs":        ["SOL/USDC","BTC/USDC","ETH/USDC","BNB/USDC","JUP/USDC","BONK/USDC"],
+    "watch_pairs":        ["SOL/USDC","BTC/USDC","ETH/USDC","BNB/USDC","JUP/USDC","BONK/USDC","SPCX/USDC"],
     "price_history_pairs": {},
 }
 _state_lock = threading.Lock()
@@ -58,6 +63,15 @@ def get_price(pair="SOL/USDC"):
         r = requests.get("https://api.coingecko.com/api/v3/simple/price",
             params={"ids":cid,"vs_currencies":"usd"}, timeout=5)
         return float(r.json().get(cid,{}).get("usd",0))
+        # DexScreener fallback for tokens not on CoinGecko
+        try:
+            token = pair.split("/")[0].upper()
+            addr = SOL_TOKENS.get(token)
+            if addr:
+                r = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{addr}", timeout=5)
+                price = float(r.json().get("pairs",[{}])[0].get("priceUsd",0))
+                if price > 0: return price
+        except Exception: pass
     except Exception: return 0.0
 
 # ── Technical Indicators ─────────────────────────────────────────────────────
