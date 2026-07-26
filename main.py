@@ -281,7 +281,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args): pass
     def _check_auth(self):
         if self.API_SECRET and self.headers.get("X-API-Secret","")!=self.API_SECRET:
-            self.respond(401,"text/plain",b"Unauthorized"); return False
+            return False
         return True
     def respond(self, code, ct, body):
         self.send_response(code); self.send_header("Content-Type",ct)
@@ -289,7 +289,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body if isinstance(body,bytes) else body.encode())
     def do_GET(self):
         p = urlparse(self.path).path
-        if not self._check_auth(): return
+        if not self._check_auth():
+            self.respond(401,"text/plain",b"Unauthorized")
+            return
         if p in ("/","/dashboard"):
             self.respond(200,"text/html; charset=utf-8",DASHBOARD.replace("{API_SECRET}",self.API_SECRET).encode())
         elif p=="/state":
@@ -308,7 +310,9 @@ class Handler(BaseHTTPRequestHandler):
         p = urlparse(self.path).path
         cl = int(self.headers.get("Content-Length",0))
         body = self.rfile.read(cl) if cl>0 else b"{}"
-        if not self._check_auth(): return
+        if not self._check_auth():
+            self.respond(401,"text/plain",b"Unauthorized")
+            return
         if p=="/start":
             if not state["running"]:
                 state["running"]=True; log("Bot started — AI Trader on "+state["pair"])
