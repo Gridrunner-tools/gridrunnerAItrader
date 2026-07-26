@@ -167,6 +167,7 @@ def ai_loop():
             try:
                 pair=state["pair"]; price=get_price(pair)
                 if price>0:
+                    log(f"Price update: {pair}=${price:.4f}","DEBUG")
                     state["price"]=price
                     state["price_history"].append({"time":int(time.time()),"value":price})
                     if len(state["price_history"])>200: state["price_history"]=state["price_history"][-200:]
@@ -177,7 +178,10 @@ def ai_loop():
                     amt=state["max_position"]*0.25
                     if execute_trade(ind["signal"],pair,amt):
                         send_telegram(f"<b>{ind['signal'].upper()}</b> {pair}\nPrice: ${price:.4f}\nAmount: ${amt:.2f}\nConfidence: {ind['confidence']*100:.0f}%")
-            except Exception as e: log(f"AI loop: {e}","WARN")
+                log(f"AI cycle: {pair} RSI={ind.get('rsi')} MACD={ind.get('macd')} signal={ind.get('signal')} conf={ind.get('confidence')}","INFO")
+            except Exception as e:
+                import traceback
+                log(f"AI loop error: {e}\n{traceback.format_exc()}","ERROR")
         time.sleep(30 if state["running"] else 5)
 
 # ── Dashboard HTML ───────────────────────────────────────────────────────────
@@ -239,7 +243,7 @@ label{font-size:12px;color:var(--dim);display:block;margin-bottom:4px}
 <script>
 var API_SECRET="{API_SECRET}";
 function apiFetch(u,o){o=o||{};o.headers=o.headers||{};if(API_SECRET)o.headers["X-API-Secret"]=API_SECRET;return fetch(u,o)}
-function refresh(){apiFetch("/state").then(function(r){return r.json()}).then(function(d){
+console.log("Dashboard loaded — GridrunnerAItrader");function refresh(){apiFetch("/state").then(function(r){return r.json()}).then(function(d){console.log("refresh: pair="+d.pair+" running="+d.running+" ai_keys="+Object.keys(d.ai_analysis||{}).length+" opps="+(d.opportunities||[]).length+" trades="+(d.trades_list||[]).length);
 var on=d.running;
 document.getElementById("dot").className="dot"+(on?" on":"");
 document.getElementById("status-text").textContent=on?"Running \u2014 AI Trader on "+(d.pair||"SOL/USDC"):"Stopped";
@@ -260,17 +264,17 @@ var trades=d.trades_list||[];
 if(trades.length){var th="";trades.slice().reverse().forEach(function(t){var cls=t.action==="buy"?"signal-buy":"signal-sell";
 th+="<tr><td>"+t.time+"</td><td>"+(t.pair||"--")+"</td><td class=\""+cls+"\">"+t.action.toUpperCase()+"</td><td>$"+(t.price||0).toFixed(4)+"</td><td>$"+(t.amount||0).toFixed(2)+"</td><td style=\"color:"+(t.pnl>0?"var(--green)":t.pnl<0?"var(--red)":"var(--dim)")+"\">"+(t.pnl!=null?"$"+t.pnl.toFixed(2):"--")+"</td></tr>"});
 document.getElementById("trades-body").innerHTML=th}
-}).catch(function(e){console.log("Refresh:",e)})}
+}).catch(function(e){console.error("API error:",e)})}
 function startBot(){apiFetch("/start",{method:"POST"}).then(function(){refresh()})}
 function stopBot(){apiFetch("/stop",{method:"POST"}).then(function(){refresh()})}
 function updateCfg(){}
 function saveConfig(){var c={pair:document.getElementById("cfg-pair").value,max_pos:parseFloat(document.getElementById("cfg-maxpos").value)||1000,max_daily_loss:parseFloat(document.getElementById("cfg-maxloss").value)||500};
 apiFetch("/config",{method:"POST",body:JSON.stringify(c)}).then(function(){alert("Config saved")})}
-function togglePaper(){apiFetch("/toggle_paper",{method:"POST"}).then(function(r){return r.json()}).then(function(d){
+function togglePaper(){console.log("Toggling paper mode");apiFetch("/toggle_paper",{method:"POST"}).then(function(r){return r.json()}).then(function(d){console.log("Paper mode now: "+d.paper_trading);
 var btn=document.getElementById("paper-btn");
 if(d.paper_trading){btn.textContent="\U0001f4cb PAPER";btn.className="btn paper-on"}
 else{btn.textContent="\U0001f534 LIVE";btn.className="btn paper-off"}})}
-function toggleConfig(){var c=document.getElementById("config-card");c.style.display=c.style.display==="none"?"block":"none"}
+function toggleConfig(){var c=document.getElementById("config-card");var shown=c.style.display==="none";c.style.display=shown?"block":"none";console.log("Config toggle: "+(shown?"shown":"hidden"))}
 function updatePaperBtn(pt){var b=document.getElementById("paper-btn");b.textContent=pt?"\U0001f4cb PAPER":"\U0001f534 LIVE";b.className="btn "+(pt?"paper-on":"paper-off")}
 setInterval(refresh,3000);refresh();
 </script></body></html>"""
@@ -305,6 +309,8 @@ class Handler(BaseHTTPRequestHandler):
                     "emergency_stop":state["emergency_stop"],"paper_trading":state["paper_trading"]}).encode())
         elif p=="/debug":
             with _state_lock: self.respond(200,"application/json",json.dumps(state,default=str).encode())
+        elif p=="/logs":
+            with _state_lock: self.respond(200,"application/json",json.dumps(state["log"][-100:]).encode())
         else: self.respond(404,"text/plain",b"Not found")
     def do_POST(self):
         p = urlparse(self.path).path
@@ -348,6 +354,8 @@ class Handler(BaseHTTPRequestHandler):
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    log(f"Server starting on port {PORT}", "INFO")
+    log(f"Pair: {state['pair']} | Paper trading: {state['paper_trading']} | Max pos: ${state['max_position']}", "INFO")
     print(f"\n  GridrunnerAItrader — http://0.0.0.0:{PORT}")
     print(f"  AI Trading Bot | Dashboard + API\n")
     threading.Thread(target=ai_loop, daemon=True).start()
