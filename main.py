@@ -48,6 +48,18 @@ state = {
 }
 _state_lock = threading.Lock()
 
+# Rate limiter — simple per-IP tracking
+_rate_limits = {}
+def check_rate_limit(ip, max_req=30, window=60):
+    now = time.time()
+    if ip not in _rate_limits:
+        _rate_limits[ip] = []
+    _rate_limits[ip] = [t for t in _rate_limits[ip] if now - t < window]
+    if len(_rate_limits[ip]) >= max_req:
+        return False
+    _rate_limits[ip].append(now)
+    return True
+
 def log(msg, level="INFO"):
     entry = f"[{time.strftime('%H:%M:%S')}] [{level}] {msg}"
     state["log"].append(entry)
@@ -334,7 +346,7 @@ class Handler(BaseHTTPRequestHandler):
         return True
     def respond(self, code, ct, body):
         self.send_response(code); self.send_header("Content-Type",ct)
-        self.send_header("Access-Control-Allow-Origin","*"); self.end_headers()
+        self.send_header("Access-Control-Allow-Origin","http://localhost:10000"); self.end_headers()
         self.wfile.write(body if isinstance(body,bytes) else body.encode())
     def do_GET(self):
         p = urlparse(self.path).path
@@ -361,6 +373,9 @@ class Handler(BaseHTTPRequestHandler):
             with _state_lock: self.respond(200,"application/json",json.dumps(state["log"][-100:]).encode())
         else: self.respond(404,"text/plain",b"Not found")
     def do_POST(self):
+        if not check_rate_limit(self.client_address[0], max_req=20):
+            self.respond(429,"text/plain",b"Too many requests")
+            return
         p = urlparse(self.path).path
         if p=="/jserror":
             try:
@@ -388,6 +403,18 @@ class Handler(BaseHTTPRequestHandler):
         elif p=="/config":
             try:
                 data=json.loads(body)
+                max_pos = float(data.get("max_pos", state["max_position"]))
+                if max_pos < 1 or max_pos > 100000:
+                    self.respond(400,"application/json",json.dumps({"error":"max_pos must be 1-100000"}).encode())
+                    return
+                max_loss = float(data.get("max_daily_loss", state["max_daily_loss"]))
+                if max_loss < 1 or max_loss > 50000:
+                    self.respond(400,"application/json",json.dumps({"error":"max_daily_loss must be 1-50000"}).encode())
+                    return
+                wp = data.get("watch_pairs")
+                if wp and (not isinstance(wp,list) or len(wp) > 20):
+                    self.respond(400,"application/json",json.dumps({"error":"watch_pairs must be list, max 20 pairs"}).encode())
+                    return
                 with _state_lock:
                     if "pair" in data: state["pair"]=data["pair"]
                     if "watch_pairs" in data and isinstance(data["watch_pairs"],list):
