@@ -191,13 +191,15 @@ def ai_loop():
                         # Per-pair price history
                         if pair not in state["price_history_pairs"]:
                             state["price_history_pairs"][pair]=[]
-                        state["price_history_pairs"][pair].append({"time":int(time.time()),"value":price})
+                        with _state_lock:
+                            state["price_history_pairs"][pair].append({"time":int(time.time()),"value":price})
                         if len(state["price_history_pairs"][pair])>200:
                             state["price_history_pairs"][pair]=state["price_history_pairs"][pair][-200:]
                         # Also update primary pair's price/price_history for backward compat
                         if pair==state["pair"]:
                             state["price"]=price
-                            state["price_history"].append({"time":int(time.time()),"value":price})
+                            with _state_lock:
+                                state["price_history"].append({"time":int(time.time()),"value":price})
                             if len(state["price_history"])>200: state["price_history"]=state["price_history"][-200:]
                         # Analyze this pair
                         ind=analyze_market(pair)
@@ -397,7 +399,15 @@ class Handler(BaseHTTPRequestHandler):
         elif p=="/trade":
             try:
                 data=json.loads(body)
-                ok=execute_trade(data.get("signal","buy"),data.get("pair",state["pair"]),float(data.get("amount",100)))
+                signal = data.get("signal","").lower()
+                if signal not in ("buy","sell"):
+                    self.respond(400,"application/json",json.dumps({"error":"signal must be buy or sell"}).encode())
+                    return
+                amount = float(data.get("amount",0))
+                if amount <= 0 or amount > state["max_position"]:
+                    self.respond(400,"application/json",json.dumps({"error":"amount out of range"}).encode())
+                    return
+                ok=execute_trade(signal,data.get("pair",state["pair"]),amount)
                 self.respond(200,"application/json",json.dumps({"ok":ok}).encode())
             except Exception as e: self.respond(400,"application/json",json.dumps({"error":str(e)}).encode())
         elif p=="/toggle_paper":
