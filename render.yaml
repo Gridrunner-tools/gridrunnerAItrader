@@ -1,9 +1,19 @@
+# Render Blueprint — GridrunnerAItrader
+# AI-powered trading assistant
 services:
   - type: web
     name: gridrunner-aitrader
     env: python
-    buildCommand: ""
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     envVars:
       - key: PORT
         value: "10000"
+      - key: API_SECRET
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
