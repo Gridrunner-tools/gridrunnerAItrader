@@ -17,6 +17,17 @@ except ImportError:
 PORT         = int(os.environ.get("PORT", 10000))
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
+SOL_PRIVATE_KEY    = os.environ.get("SOL_PRIVATE_KEY", "")
+SOL_WALLET_ADDRESS = os.environ.get("SOL_WALLET_ADDRESS", "")
+ALCHEMY_KEY        = os.environ.get("ALCHEMY_KEY", "")
+
+# Wallet status helpers
+def wallet_configured():
+    return bool(SOL_PRIVATE_KEY and SOL_WALLET_ADDRESS)
+
+def wallet_ready():
+    """Full wallet ready for live trading (key + address + RPC)."""
+    return bool(SOL_PRIVATE_KEY and SOL_WALLET_ADDRESS and ALCHEMY_KEY)
 
 # Token mint addresses for DexScreener fallback
 SOL_TOKENS = {
@@ -45,6 +56,9 @@ state = {
     "trades_list":   [],
     "watch_pairs":        ["SOL/USDC","BTC/USDC","ETH/USDC","BNB/USDC","JUP/USDC","BONK/USDC","SPCX/USDC"],
     "price_history_pairs": {},
+    "wallet_configured":  wallet_configured(),
+    "wallet_ready":       wallet_ready(),
+    "wallet_address":     SOL_WALLET_ADDRESS[:4] + "..." + SOL_WALLET_ADDRESS[-4:] if len(SOL_WALLET_ADDRESS) >= 8 else SOL_WALLET_ADDRESS,
 }
 _state_lock = threading.Lock()
 
@@ -336,6 +350,108 @@ function updatePaperBtn(pt){var b=document.getElementById("paper-btn");b.textCon
 setInterval(refresh,3000);refresh();
 </script></body></html>"""
 
+SETUP_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Setup Guide — GridrunnerAItrader</title>
+<style>
+:root{--bg:#0a0a1a;--card:#111122;--border:#1a1a2e;--text:#e0e0e0;--dim:#888;--accent:#14b8a6;--red:#ff6b6b;--green:#00ff9d;--yellow:#ffd43b;--code-bg:#0d1117}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:20px;max-width:900px;margin:0 auto;line-height:1.7}
+h1{font-size:26px;color:var(--accent);margin-bottom:8px}
+h2{font-size:18px;color:var(--accent);margin-top:32px;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h3{font-size:15px;color:var(--text);margin-top:20px;margin-bottom:8px}
+p,li{font-size:14px;margin-bottom:8px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code{background:var(--code-bg);padding:2px 6px;border-radius:4px;font-size:13px;font-family:'SF Mono','Fira Code',monospace;color:var(--green)}
+pre{background:var(--code-bg);padding:14px 18px;border-radius:8px;overflow-x:auto;font-size:13px;font-family:'SF Mono','Fira Code',monospace;margin:12px 0;border:1px solid var(--border);color:var(--green)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:20px;margin:20px 0}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;margin-right:4px}
+.tag-req{background:var(--red)33;color:var(--red)}
+.tag-opt{background:var(--dim)33;color:var(--dim)}
+.tag-wallet{background:var(--yellow)33;color:var(--yellow)}
+.step{display:flex;gap:12px;margin:16px 0}
+.step-num{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#000;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;flex-shrink:0}
+.step-body{flex:1}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)}
+th{color:var(--dim);font-weight:600;font-size:11px;text-transform:uppercase}
+td code{white-space:nowrap}
+.back-link{display:inline-block;margin:20px 0;color:var(--dim);font-size:13px}
+</style></head><body>
+<h1>🛠️ GridrunnerAItrader — Setup Guide</h1>
+<p style="color:var(--dim);margin-bottom:24px">Everything you need to configure before running the AI trader.</p>
+
+<h2>📋 Environment Variables</h2>
+<p>Set these in your <code>.env</code> file (local) or Render dashboard (production). Copy <code>.env.example</code> to <code>.env</code> to get started.</p>
+
+<table>
+<tr><th>Variable</th><th>Required</th><th>Description</th></tr>
+<tr><td><code>SOL_PRIVATE_KEY</code></td><td><span class="tag tag-wallet">Wallet</span></td><td>Your Solana wallet private key (base58 or JSON byte array). Used to sign transactions in live mode. Keep this secret — never commit it.</td></tr>
+<tr><td><code>SOL_WALLET_ADDRESS</code></td><td><span class="tag tag-wallet">Wallet</span></td><td>Your Solana wallet public address. Displayed in the dashboard and used as the trading account.</td></tr>
+<tr><td><code>ALCHEMY_KEY</code></td><td><span class="tag tag-wallet">Wallet</span></td><td>Alchemy or Helius RPC API key for Solana mainnet access. Get one free at <a href="https://alchemy.com" target="_blank">alchemy.com</a> or <a href="https://helius.dev" target="_blank">helius.dev</a>. Required for live trading (reading on-chain data, sending transactions).</td></tr>
+<tr><td><code>API_SECRET</code></td><td><span class="tag tag-req">Required</span></td><td>A secret password that protects your dashboard and API. Choose a strong random string. All API requests must include <code>X-API-Secret</code> header.</td></tr>
+<tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td><span class="tag tag-opt">Optional</span></td><td>Telegram bot token from <a href="https://t.me/BotFather" target="_blank">@BotFather</a>. Enables trade alerts and notifications via Telegram.</td></tr>
+<tr><td><code>TELEGRAM_CHAT_ID</code></td><td><span class="tag tag-opt">Optional</span></td><td>Your Telegram chat ID (or channel ID). Where the bot sends alerts. Get yours from <a href="https://t.me/userinfobot" target="_blank">@userinfobot</a>.</td></tr>
+<tr><td><code>PORT</code></td><td><span class="tag tag-opt">Optional</span></td><td>Server port. Defaults to <code>10000</code>. Set only if you need a different port.</td></tr>
+</table>
+
+<div class="card">
+<h3 style="margin-top:0">🔐 Wallet Config — Three Levels</h3>
+<p><strong>Paper Trading</strong> (no env vars): The bot runs with simulated balances. Full dashboard, AI analysis, and opportunity detection work — but no real trades are sent on-chain. This is the default.</p>
+<p><strong>Wallet Configured</strong> (<code>SOL_PRIVATE_KEY</code> + <code>SOL_WALLET_ADDRESS</code>): The bot knows your wallet. Dashboard shows your address. Still runs in paper mode by default — you control when to go live.</p>
+<p><strong>Live Ready</strong> (all three wallet vars): Full on-chain capability. When you switch off paper trading in the dashboard, the bot can execute real trades on Solana.</p>
+</div>
+
+<h2>📱 Telegram Setup</h2>
+<div class="step"><div class="step-num">1</div><div class="step-body"><h3>Create a bot</h3><p>Open <a href="https://t.me/BotFather" target="_blank">@BotFather</a> on Telegram. Send <code>/newbot</code>, choose a name (e.g. "My GridrunnerAI"), and pick a username ending in <code>bot</code>. BotFather will give you a token — that's your <code>TELEGRAM_BOT_TOKEN</code>.</p></div></div>
+<div class="step"><div class="step-num">2</div><div class="step-body"><h3>Get your chat ID</h3><p>Open <a href="https://t.me/userinfobot" target="_blank">@userinfobot</a> on Telegram and send any message. It replies with your chat ID — that's your <code>TELEGRAM_CHAT_ID</code>. Alternatively, send a message to your new bot, then visit <code>https://api.telegram.org/bot&lt;YOUR_TOKEN&gt;/getUpdates</code> to find the chat ID in the JSON response.</p></div></div>
+<div class="step"><div class="step-num">3</div><div class="step-body"><h3>Test it</h3><p>Set both env vars, start the bot, and click "Start" on the dashboard. You should receive a "Bot Started" message on Telegram.</p></div></div>
+
+<h2>🪙 Solana Wallet Setup</h2>
+<div class="step"><div class="step-num">1</div><div class="step-body"><h3>Create a wallet (if needed)</h3><p>Use <a href="https://phantom.app" target="_blank">Phantom</a>, <a href="https://solflare.com" target="_blank">Solflare</a>, or the Solana CLI: <code>solana-keygen new</code>. This gives you a public address and a private key.</p></div></div>
+<div class="step"><div class="step-num">2</div><div class="step-body"><h3>Export your private key</h3><p>From Phantom: Settings → Manage Accounts → Export Private Key. From Solana CLI: <code>cat ~/.config/solana/id.json</code>. The private key is either a base58 string or a JSON array of numbers — both formats work.</p></div></div>
+<div class="step"><div class="step-num">3</div><div class="step-body"><h3>Get an RPC endpoint</h3><p>Sign up at <a href="https://alchemy.com" target="_blank">alchemy.com</a> (free tier: 300M compute units/month) or <a href="https://helius.dev" target="_blank">helius.dev</a> (free tier: 10K requests/day). Create a Solana app, copy the HTTPS endpoint URL — the API key is the part after <code>?api-key=</code> or it may be the full URL.</p></div></div>
+<div class="step"><div class="step-num">4</div><div class="step-body"><h3>Fund your wallet</h3><p>Send SOL to your wallet address for gas fees. For live trading, make sure you have enough SOL for transaction fees (typically 0.001–0.01 SOL per trade).</p></div></div>
+
+<h2>🚀 Deploying on Render</h2>
+<div class="step"><div class="step-num">1</div><div class="step-body"><h3>Fork the repo</h3><p>Fork <code>Gridrunner-tools/gridrunnerAItrader</code> on GitHub to your own account.</p></div></div>
+<div class="step"><div class="step-num">2</div><div class="step-body"><h3>Create a Render Web Service</h3><p>On <a href="https://render.com" target="_blank">render.com</a>: New → Web Service → connect your forked repo. Render auto-detects the <code>render.yaml</code> blueprint.</p></div></div>
+<div class="step"><div class="step-num">3</div><div class="step-body"><h3>Set environment variables</h3><p>In the Render dashboard: Environment → add all your env vars from <code>.env.example</code>. Mark secrets (<code>SOL_PRIVATE_KEY</code>, <code>API_SECRET</code>, <code>TELEGRAM_BOT_TOKEN</code>) — Render encrypts these at rest.</p></div></div>
+<div class="step"><div class="step-num">4</div><div class="step-body"><h3>Deploy and verify</h3><p>Render deploys automatically. Visit your <code>.onrender.com</code> URL — you should see the dashboard. Check <code>/setup</code> to confirm all env vars are detected.</p></div></div>
+
+<h2>🏃 Getting Started (Local)</h2>
+<pre># 1. Clone and set up
+git clone https://github.com/Gridrunner-tools/gridrunnerAItrader.git
+cd gridrunnerAItrader
+
+# 2. Install dependencies
+pip install -r requirements.txt
+
+# 3. Copy and fill in env vars
+cp .env.example .env
+# Edit .env with your actual values
+
+# 4. Run the server
+python main.py
+
+# 5. Open the dashboard
+# http://localhost:10000</pre>
+
+<h2>✅ Verification Checklist</h2>
+<p>After setup, verify each of these:</p>
+<ul style="margin-left:20px;margin-bottom:20px">
+<li>✅ Dashboard loads at your server URL</li>
+<li>✅ API_SECRET protects the dashboard (browser prompts for it or uses the embedded key)</li>
+<li>✅ Telegram messages arrive when you start/stop the bot</li>
+<li>✅ AI analysis populates within 30 seconds of starting</li>
+<li>✅ Wallet address shows in /state (if configured)</li>
+<li>✅ /setup page shows correct status for each env var</li>
+</ul>
+
+<a href="/" class="back-link">← Back to Dashboard</a>
+</body></html>"""
+
 # ── HTTP Server ──────────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     API_SECRET = os.environ.get("API_SECRET","")
@@ -350,7 +466,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body if isinstance(body,bytes) else body.encode())
     def do_GET(self):
         p = urlparse(self.path).path
-        if p not in ("/","/dashboard","/state","/debug","/logs"):
+        if p not in ("/","/dashboard","/setup","/setup.html","/state","/debug","/logs"):
             if not self._check_auth():
                 self.respond(401,"text/plain",b"Unauthorized")
                 return
@@ -364,13 +480,18 @@ class Handler(BaseHTTPRequestHandler):
                     "daily_loss":state["daily_loss"],"ai_analysis":state["ai_analysis"],
                     "opportunities":state["opportunities"],"trades_list":state["trades_list"],
                     "max_position":state["max_position"],"max_daily_loss":state["max_daily_loss"],
-                    "emergency_stop":state["emergency_stop"],"paper_trading":state["paper_trading"],"watch_pairs":state["watch_pairs"],"price_history_pairs":state["price_history_pairs"]}).encode())
+                    "emergency_stop":state["emergency_stop"],"paper_trading":state["paper_trading"],
+                    "watch_pairs":state["watch_pairs"],"price_history_pairs":state["price_history_pairs"],
+                    "wallet_configured":state["wallet_configured"],"wallet_ready":state["wallet_ready"],
+                    "wallet_address":state["wallet_address"]}).encode())
         elif p=="/debug":
             with _state_lock: self.respond(200,"application/json",json.dumps(state,default=str).encode())
         elif p=="/jserror":
             self.respond(200,"application/json",json.dumps(state.get("js_errors",[])).encode())
         elif p=="/logs":
             with _state_lock: self.respond(200,"application/json",json.dumps(state["log"][-100:]).encode())
+        elif p in ("/setup","/setup.html"):
+            self.respond(200,"text/html; charset=utf-8",SETUP_PAGE.encode())
         else: self.respond(404,"text/plain",b"Not found")
     def do_POST(self):
         if not check_rate_limit(self.client_address[0], max_req=20):
@@ -451,8 +572,15 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     log(f"Server starting on port {PORT}", "INFO")
     log(f"Pair: {state['pair']} | Paper trading: {state['paper_trading']} | Max pos: ${state['max_position']}", "INFO")
+    if wallet_ready():
+        log(f"Wallet ready for live trading: {state['wallet_address']}", "INFO")
+    elif wallet_configured():
+        log(f"Wallet configured (missing RPC): {state['wallet_address']}", "WARN")
+    else:
+        log("No wallet configured — running paper trading only", "INFO")
     print(f"\n  GridrunnerAItrader — http://0.0.0.0:{PORT}")
-    print(f"  AI Trading Bot | Dashboard + API\n")
+    print(f"  AI Trading Bot | Dashboard + API")
+    print(f"  Setup Guide: http://0.0.0.0:{PORT}/setup\n")
     threading.Thread(target=ai_loop, daemon=True).start()
     server = HTTPServer(("0.0.0.0", PORT), Handler)
     try: server.serve_forever()
